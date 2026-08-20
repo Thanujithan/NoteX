@@ -147,6 +147,9 @@ if "mcq_count" not in st.session_state:
 if "language" not in st.session_state:
     st.session_state.language = "English"
 
+if "fast_mode" not in st.session_state:
+    st.session_state.fast_mode = True
+
 # =========================================================
 # HELPERS
 # =========================================================
@@ -166,9 +169,17 @@ def extract_pdf_text(uploaded_file):
 
 
 def create_prompt(selected_mode, content):
+    fast_mode = st.session_state.fast_mode
     length = st.session_state.output_length
     language = st.session_state.language
     mcq_count = st.session_state.mcq_count
+
+    # Fast Mode reduces very large requests and asks Gemini to be concise.
+    if fast_mode:
+        content = content[:18000]
+        length = "Short"
+        if selected_mode == "MCQ":
+            mcq_count = min(mcq_count, 5)
 
     length_instruction = {
         "Short": "Keep the response short and focused.",
@@ -180,6 +191,12 @@ def create_prompt(selected_mode, content):
         "Write the complete answer in Tamil."
         if language == "Tamil"
         else "Write the complete answer in English."
+    )
+
+    speed_instruction = (
+        "Respond directly and concisely. Avoid unnecessary introduction or repetition."
+        if fast_mode
+        else "Prioritize completeness and study usefulness."
     )
 
     if selected_mode == "Smart Notes":
@@ -207,6 +224,7 @@ last-minute exam preparation.
 Additional instructions:
 - {length_instruction}
 - {language_instruction}
+- {speed_instruction}
 - Use simple student-friendly language.
 
 Study Content:
@@ -226,6 +244,7 @@ Requirements:
 - Make it suitable for examination revision.
 - {length_instruction}
 - {language_instruction}
+- {speed_instruction}
 
 Study Content:
 {content}
@@ -257,6 +276,7 @@ Requirements:
 - Make the questions suitable for students.
 - {length_instruction}
 - {language_instruction}
+- {speed_instruction}
 
 Study Content:
 {content}
@@ -280,6 +300,7 @@ with simple but complete answers.
 Requirements:
 - {length_instruction}
 - {language_instruction}
+- {speed_instruction}
 
 Study Content:
 {content}
@@ -959,7 +980,7 @@ with st.sidebar:
 </div>
 
 <div class="sidebar-version">
-    NoteX v0.14
+    NoteX v0.15
 </div>
 """,
         unsafe_allow_html=True,
@@ -1470,6 +1491,15 @@ elif st.session_state.view == "settings":
     with settings_left:
         st.markdown("### ✨ AI Output")
 
+        st.toggle(
+            "⚡ Fast Mode",
+            key="fast_mode",
+            help=(
+                "Uses shorter responses and limits very large input "
+                "to improve generation speed."
+            ),
+        )
+
         st.selectbox(
             "Output Length",
             ["Short", "Medium", "Detailed"],
@@ -1494,8 +1524,11 @@ elif st.session_state.view == "settings":
             help="Used whenever MCQ mode is selected.",
         )
 
+        speed_label = "⚡ Fast" if st.session_state.fast_mode else "📘 Normal"
+
         st.info(
-            f"Current setup: {st.session_state.output_length} output • "
+            f"Current setup: {speed_label} • "
+            f"{st.session_state.output_length} output • "
             f"{st.session_state.language} • "
             f"{st.session_state.mcq_count} MCQs"
         )
