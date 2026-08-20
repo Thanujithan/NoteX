@@ -28,22 +28,25 @@ st.set_page_config(
 
 load_dotenv()
 
-api_key = os.getenv("GEMINI_API_KEY")
+# Local .env + Streamlit Cloud Secrets support
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
-    st.error(
-        "Gemini API key not found. "
-        "Please add GEMINI_API_KEY to your .env file."
-    )
+    st.error("Gemini API key not configured.")
     st.stop()
 
 client = genai.Client(api_key=api_key)
-
 # =========================================================
 # MONGODB ATLAS SETUP
 # =========================================================
 
-mongodb_uri = os.getenv("MONGODB_URI")
+try:
+    mongodb_uri = st.secrets["MONGODB_URI"]
+except Exception:
+    mongodb_uri = os.getenv("MONGODB_URI")
 
 if not mongodb_uri:
     st.error(
