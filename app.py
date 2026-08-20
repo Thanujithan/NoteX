@@ -8,6 +8,7 @@ from pypdf import PdfReader
 from pymongo import MongoClient, DESCENDING
 from pymongo.server_api import ServerApi
 from bson import ObjectId
+import bcrypt
 
 
 # =========================================================
@@ -98,10 +99,17 @@ try:
     mongo_client.admin.command("ping")
 
     db = mongo_client["notex"]
+
     notes_collection = db["notes"]
+    users_collection = db["users"]
 
     notes_collection.create_index(
         [("created_at", DESCENDING)]
+    )
+
+    users_collection.create_index(
+        "email",
+        unique=True
     )
 
 except Exception as error:
@@ -149,6 +157,21 @@ if "language" not in st.session_state:
 
 if "fast_mode" not in st.session_state:
     st.session_state.fast_mode = True
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "user_id" not in st.session_state:
+    st.session_state.user_id = None
+
+if "user_name" not in st.session_state:
+    st.session_state.user_name = ""
+
+if "user_email" not in st.session_state:
+    st.session_state.user_email = ""
+
+if "auth_view" not in st.session_state:
+    st.session_state.auth_view = "login"
 
 # =========================================================
 # HELPERS
@@ -305,6 +328,88 @@ Requirements:
 Study Content:
 {content}
 """
+
+
+# =========================================================
+# AUTH HELPERS
+# =========================================================
+
+def hash_password(password):
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
+
+
+def verify_password(password, hashed_password):
+    return bcrypt.checkpw(
+        password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )
+
+
+def register_user(name, email, password):
+    name = name.strip()
+    email = email.strip().lower()
+
+    if not name:
+        return False, "Name is required."
+
+    if not email:
+        return False, "Email is required."
+
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters."
+
+    existing_user = users_collection.find_one(
+        {"email": email}
+    )
+
+    if existing_user:
+        return False, "Email already registered."
+
+    password_hash = hash_password(password)
+
+    result = users_collection.insert_one({
+        "name": name,
+        "email": email,
+        "password_hash": password_hash,
+        "created_at": datetime.utcnow()
+    })
+
+    return True, str(result.inserted_id)
+
+
+def login_user(email, password):
+    email = email.strip().lower()
+
+    user = users_collection.find_one(
+        {"email": email}
+    )
+
+    if not user:
+        return False, "Invalid email or password."
+
+    if not verify_password(
+        password,
+        user.get("password_hash", "")
+    ):
+        return False, "Invalid email or password."
+
+    return True, user
+
+
+def logout_user():
+    st.session_state.logged_in = False
+    st.session_state.user_id = None
+    st.session_state.user_name = ""
+    st.session_state.user_email = ""
+    st.session_state.auth_view = "login"
+    st.session_state.view = "workspace"
+    st.session_state.input_text = ""
+    st.session_state.output_text = ""
+    st.session_state.current_note_id = None
+    st.session_state.loaded_pdf_name = ""
 
 
 # =========================================================
@@ -980,7 +1085,7 @@ with st.sidebar:
 </div>
 
 <div class="sidebar-version">
-    NoteX v0.15
+    NoteX v0.16
 </div>
 """,
         unsafe_allow_html=True,
