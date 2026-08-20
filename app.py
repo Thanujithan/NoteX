@@ -23,35 +23,68 @@ st.set_page_config(
 
 
 # =========================================================
-# GEMINI SETUP
+# CONFIG / SECRETS
+# Works locally with .env and on Streamlit Cloud with Secrets
 # =========================================================
 
 load_dotenv()
 
-# Local .env + Streamlit Cloud Secrets support
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-except Exception:
-    api_key = os.getenv("GEMINI_API_KEY")
+
+def get_secret(name):
+    """
+    Priority:
+    1. Streamlit Community Cloud Secrets
+    2. Local environment / .env
+    """
+    value = None
+
+    try:
+        if name in st.secrets:
+            value = st.secrets[name]
+    except Exception:
+        pass
+
+    if not value:
+        value = os.getenv(name)
+
+    if isinstance(value, str):
+        value = value.strip()
+
+    return value
+
+
+api_key = get_secret("GEMINI_API_KEY")
+mongodb_uri = get_secret("MONGODB_URI")
+
+
+# =========================================================
+# GEMINI SETUP
+# =========================================================
 
 if not api_key:
-    st.error("Gemini API key not configured.")
+    st.error(
+        "Gemini API key is not configured. "
+        "On Streamlit Cloud go to App settings → Secrets and add "
+        'GEMINI_API_KEY = "your_key".'
+    )
     st.stop()
 
-client = genai.Client(api_key=api_key)
+try:
+    client = genai.Client(api_key=api_key)
+except Exception as error:
+    st.error(f"Gemini client setup failed: {error}")
+    st.stop()
+
+
 # =========================================================
 # MONGODB ATLAS SETUP
 # =========================================================
 
-try:
-    mongodb_uri = st.secrets["MONGODB_URI"]
-except Exception:
-    mongodb_uri = os.getenv("MONGODB_URI")
-
 if not mongodb_uri:
     st.error(
-        "MongoDB URI not found. "
-        "Please add MONGODB_URI to your .env file."
+        "MongoDB URI is not configured. "
+        "On Streamlit Cloud go to App settings → Secrets and add "
+        'MONGODB_URI = "your_connection_string".'
     )
     st.stop()
 
@@ -62,19 +95,21 @@ try:
         serverSelectionTimeoutMS=5000,
     )
 
-    # Test the connection once when the app starts
     mongo_client.admin.command("ping")
 
     db = mongo_client["notex"]
     notes_collection = db["notes"]
 
-    # Helpful index for recent-history loading
     notes_collection.create_index(
         [("created_at", DESCENDING)]
     )
 
 except Exception as error:
-    st.error(f"MongoDB connection failed: {error}")
+    st.error(
+        "MongoDB connection failed. "
+        "Check your Atlas connection string, database user, password, "
+        f"and Network Access settings.\n\nDetails: {error}"
+    )
     st.stop()
 
 
@@ -924,7 +959,7 @@ with st.sidebar:
 </div>
 
 <div class="sidebar-version">
-    NoteX v0.13
+    NoteX v0.14
 </div>
 """,
         unsafe_allow_html=True,
