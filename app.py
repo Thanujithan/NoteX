@@ -413,11 +413,27 @@ def logout_user():
 
 
 # =========================================================
-# MONGODB HELPERS
+# MONGODB HELPERS - USER SCOPED
 # =========================================================
 
+def current_user_object_id():
+    if not st.session_state.logged_in or not st.session_state.user_id:
+        return None
+
+    try:
+        return ObjectId(st.session_state.user_id)
+    except Exception:
+        return None
+
+
 def save_note_to_db(title, input_text, output_text, mode, source="text"):
+    user_id = current_user_object_id()
+
+    if not user_id:
+        return None
+
     note = {
+        "user_id": user_id,
         "title": title,
         "input": input_text,
         "output": output_text,
@@ -432,43 +448,79 @@ def save_note_to_db(title, input_text, output_text, mode, source="text"):
 
 
 def get_recent_notes(limit=5):
+    user_id = current_user_object_id()
+
+    if not user_id:
+        return []
+
     return list(
-        notes_collection.find()
+        notes_collection.find({"user_id": user_id})
         .sort("created_at", DESCENDING)
         .limit(limit)
     )
 
 
 def mark_note_saved(note_id):
-    if not note_id:
+    user_id = current_user_object_id()
+
+    if not user_id or not note_id:
         return False
 
     result = notes_collection.update_one(
-        {"_id": ObjectId(note_id)},
-        {"$set": {"saved": True}}
+        {
+            "_id": ObjectId(note_id),
+            "user_id": user_id,
+        },
+        {"$set": {"saved": True}},
     )
 
     return result.modified_count > 0 or result.matched_count > 0
 
 
-def get_saved_notes(limit=20):
+def get_saved_notes(limit=50):
+    user_id = current_user_object_id()
+
+    if not user_id:
+        return []
+
     return list(
-        notes_collection.find({"saved": True})
+        notes_collection.find(
+            {
+                "user_id": user_id,
+                "saved": True,
+            }
+        )
         .sort("created_at", DESCENDING)
         .limit(limit)
     )
 
 
 def unsave_note(note_id):
+    user_id = current_user_object_id()
+
+    if not user_id:
+        return False
+
     result = notes_collection.update_one(
-        {"_id": ObjectId(note_id)},
-        {"$set": {"saved": False}}
+        {
+            "_id": ObjectId(note_id),
+            "user_id": user_id,
+        },
+        {"$set": {"saved": False}},
     )
+
     return result.modified_count > 0 or result.matched_count > 0
 
 
 def get_history_notes(search_text="", mode_filter="All"):
-    query = {}
+    user_id = current_user_object_id()
+
+    if not user_id:
+        return []
+
+    query = {
+        "user_id": user_id,
+    }
 
     if search_text.strip():
         query["$or"] = [
@@ -487,9 +539,18 @@ def get_history_notes(search_text="", mode_filter="All"):
 
 
 def delete_note(note_id):
+    user_id = current_user_object_id()
+
+    if not user_id:
+        return False
+
     result = notes_collection.delete_one(
-        {"_id": ObjectId(note_id)}
+        {
+            "_id": ObjectId(note_id),
+            "user_id": user_id,
+        }
     )
+
     return result.deleted_count > 0
 
 
@@ -498,15 +559,33 @@ def go_to_workspace():
 
 
 def go_to_saved_notes():
-    st.session_state.view = "saved"
+    if st.session_state.logged_in:
+        st.session_state.view = "saved"
+    else:
+        st.session_state.auth_view = "login"
+        st.session_state.view = "login"
 
 
 def go_to_history():
-    st.session_state.view = "history"
+    if st.session_state.logged_in:
+        st.session_state.view = "history"
+    else:
+        st.session_state.auth_view = "login"
+        st.session_state.view = "login"
 
 
 def go_to_settings():
     st.session_state.view = "settings"
+
+
+def go_to_login():
+    st.session_state.auth_view = "login"
+    st.session_state.view = "login"
+
+
+def go_to_register():
+    st.session_state.auth_view = "register"
+    st.session_state.view = "register"
 
 
 # =========================================================
@@ -934,6 +1013,70 @@ footer {
     }
 }
 
+
+/* ===========================
+   AUTH
+=========================== */
+
+.auth-shell {
+    max-width: 520px;
+    margin: 2.5rem auto 0 auto;
+}
+
+.auth-brand {
+    text-align: center;
+    margin-bottom: 1.25rem;
+}
+
+.auth-brand-title {
+    font-size: 34px;
+    font-weight: 850;
+    letter-spacing: -1.2px;
+}
+
+.auth-brand-x {
+    background: linear-gradient(90deg, #a855f7, #6b63ff, #1ea7ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.auth-subtitle {
+    color: #7b8092;
+    font-size: 13px;
+    margin-top: 4px;
+}
+
+.guest-lock {
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    border: 1px solid #2b2e3a;
+    background: rgba(17, 19, 27, 0.78);
+    border-radius: 13px;
+    color: #c8cbd6;
+    font-size: 13px;
+}
+
+.user-chip {
+    text-align: center;
+    padding: 10px 8px;
+    margin-bottom: 12px;
+    background: rgba(116, 92, 255, 0.08);
+    border: 1px solid rgba(116, 92, 255, 0.18);
+    border-radius: 12px;
+}
+
+.user-chip-name {
+    color: #f3f4f8;
+    font-size: 13px;
+    font-weight: 750;
+}
+
+.user-chip-email {
+    color: #74798b;
+    font-size: 10px;
+    margin-top: 2px;
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -966,114 +1109,203 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    if st.button(
-        "＋  New Note",
-        use_container_width=True,
-        type="primary",
-    ):
-        st.session_state.input_text = ""
-        st.session_state.output_text = ""
-        st.session_state.mode = "Smart Notes"
-        st.session_state.loaded_pdf_name = ""
-        st.session_state.current_note_id = None
-        st.session_state.view = "workspace"
-        st.rerun()
+    # =====================================================
+    # LOGGED-IN SIDEBAR
+    # =====================================================
 
-    st.markdown(
-        '<div class="sidebar-divider"></div>',
-        unsafe_allow_html=True,
-    )
+    if st.session_state.logged_in:
 
-    st.markdown(
-        '<div class="sidebar-section-title">🕘 Recent</div>',
-        unsafe_allow_html=True,
-    )
-
-    recent_items = get_recent_notes(limit=5)
-
-    if not recent_items:
         st.markdown(
-            '<div class="sidebar-empty">No recent notes yet.</div>',
+            f"""
+<div class="user-chip">
+    <div class="user-chip-name">
+        👤 {st.session_state.user_name}
+    </div>
+    <div class="user-chip-email">
+        {st.session_state.user_email}
+    </div>
+</div>
+""",
             unsafe_allow_html=True,
         )
-    else:
-        for index, item in enumerate(recent_items):
-            if st.button(
-                f"📄  {item.get('title', 'Untitled note')}",
-                key=f"recent_{item['_id']}",
-                use_container_width=True,
-            ):
-                st.session_state.input_text = item.get("input", "")
-                st.session_state.output_text = item.get("output", "")
-                st.session_state.mode = item.get("mode", "Smart Notes")
-                st.session_state.current_note_id = str(item["_id"])
-                st.session_state.loaded_pdf_name = ""
-                st.session_state.view = "workspace"
-                st.rerun()
 
-    st.markdown(
-        '<div class="sidebar-divider"></div>',
-        unsafe_allow_html=True,
-    )
+        if st.button(
+            "＋  New Note",
+            use_container_width=True,
+            type="primary",
+        ):
+            st.session_state.input_text = ""
+            st.session_state.output_text = ""
+            st.session_state.mode = "Smart Notes"
+            st.session_state.loaded_pdf_name = ""
+            st.session_state.current_note_id = None
+            st.session_state.view = "workspace"
+            st.rerun()
 
-    st.markdown(
-        '<div class="sidebar-section-title">Workspace</div>',
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            '<div class="sidebar-divider"></div>',
+            unsafe_allow_html=True,
+        )
 
-    st.button(
-        "⭐  Saved Notes",
-        use_container_width=True,
-        key="open_saved_notes",
-        on_click=go_to_saved_notes,
-    )
+        st.markdown(
+            '<div class="sidebar-section-title">🕘 Recent</div>',
+            unsafe_allow_html=True,
+        )
 
-    uploaded_pdf = st.file_uploader(
-        "📂 Upload PDF",
-        type=["pdf"],
-        help="Upload a text-based PDF and NoteX will extract the content.",
-    )
+        recent_items = get_recent_notes(limit=5)
 
-    if uploaded_pdf is not None:
-        if uploaded_pdf.name != st.session_state.loaded_pdf_name:
-            try:
-                pdf_text, page_count = extract_pdf_text(uploaded_pdf)
-
-                if pdf_text.strip():
-                    st.session_state.input_text = pdf_text
-                    st.session_state.output_text = ""
-                    st.session_state.loaded_pdf_name = uploaded_pdf.name
-                    st.session_state.current_note_id = None
-
-                    st.success(
-                        f"PDF loaded • {page_count} page"
-                        f"{'s' if page_count != 1 else ''}"
-                    )
-
+        if not recent_items:
+            st.markdown(
+                '<div class="sidebar-empty">No recent notes yet.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            for item in recent_items:
+                if st.button(
+                    f"📄  {item.get('title', 'Untitled note')}",
+                    key=f"recent_{item['_id']}",
+                    use_container_width=True,
+                ):
+                    st.session_state.input_text = item.get("input", "")
+                    st.session_state.output_text = item.get("output", "")
+                    st.session_state.mode = item.get("mode", "Smart Notes")
+                    st.session_state.current_note_id = str(item["_id"])
+                    st.session_state.loaded_pdf_name = ""
+                    st.session_state.view = "workspace"
                     st.rerun()
 
-                else:
-                    st.warning(
-                        "No readable text found in this PDF. "
-                        "Scanned/image-only PDFs need OCR."
-                    )
+        st.markdown(
+            '<div class="sidebar-divider"></div>',
+            unsafe_allow_html=True,
+        )
 
-            except Exception as error:
-                st.error(f"Could not read PDF: {error}")
+        st.markdown(
+            '<div class="sidebar-section-title">Workspace</div>',
+            unsafe_allow_html=True,
+        )
 
-    st.button(
-        "📚  Full History",
-        use_container_width=True,
-        key="open_full_history",
-        on_click=go_to_history,
-    )
+        st.button(
+            "⭐  Saved Notes",
+            use_container_width=True,
+            key="open_saved_notes",
+            on_click=go_to_saved_notes,
+        )
 
-    st.button(
-        "⚙️  Settings",
-        use_container_width=True,
-        key="open_settings",
-        on_click=go_to_settings,
-    )
+        uploaded_pdf = st.file_uploader(
+            "📂 Upload PDF",
+            type=["pdf"],
+            help="Upload a text-based PDF and NoteX will extract the content.",
+        )
+
+        if uploaded_pdf is not None:
+            if uploaded_pdf.name != st.session_state.loaded_pdf_name:
+                try:
+                    pdf_text, page_count = extract_pdf_text(uploaded_pdf)
+
+                    if pdf_text.strip():
+                        st.session_state.input_text = pdf_text
+                        st.session_state.output_text = ""
+                        st.session_state.loaded_pdf_name = uploaded_pdf.name
+                        st.session_state.current_note_id = None
+                        st.session_state.view = "workspace"
+
+                        st.success(
+                            f"PDF loaded • {page_count} page"
+                            f"{'s' if page_count != 1 else ''}"
+                        )
+
+                        st.rerun()
+
+                    else:
+                        st.warning(
+                            "No readable text found in this PDF. "
+                            "Scanned/image-only PDFs need OCR."
+                        )
+
+                except Exception as error:
+                    st.error(f"Could not read PDF: {error}")
+
+        st.button(
+            "📚  Full History",
+            use_container_width=True,
+            key="open_full_history",
+            on_click=go_to_history,
+        )
+
+        st.button(
+            "⚙️  Settings",
+            use_container_width=True,
+            key="open_settings",
+            on_click=go_to_settings,
+        )
+
+        st.markdown(
+            '<div class="sidebar-divider"></div>',
+            unsafe_allow_html=True,
+        )
+
+        if st.button(
+            "🚪  Logout",
+            use_container_width=True,
+            key="logout_button",
+        ):
+            logout_user()
+            st.rerun()
+
+    # =====================================================
+    # GUEST SIDEBAR
+    # =====================================================
+
+    else:
+
+        st.button(
+            "🔐  Login",
+            use_container_width=True,
+            type="primary",
+            key="guest_login",
+            on_click=go_to_login,
+        )
+
+        st.button(
+            "📝  Create Account",
+            use_container_width=True,
+            key="guest_register",
+            on_click=go_to_register,
+        )
+
+        st.markdown(
+            '<div class="sidebar-divider"></div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            '<div class="sidebar-section-title">Explore</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.button(
+            "🏠  Workspace",
+            use_container_width=True,
+            key="guest_workspace",
+            on_click=go_to_workspace,
+        )
+
+        st.button(
+            "⚙️  Settings",
+            use_container_width=True,
+            key="guest_settings",
+            on_click=go_to_settings,
+        )
+
+        st.markdown(
+            """
+<div class="sidebar-empty" style="margin-top:14px;text-align:center;">
+    Login to unlock PDF upload,<br>
+    Recent, Saved Notes and Full History.
+</div>
+""",
+            unsafe_allow_html=True,
+        )
 
     st.write("")
 
@@ -1085,7 +1317,7 @@ with st.sidebar:
 </div>
 
 <div class="sidebar-version">
-    NoteX v0.16
+    NoteX v0.17
 </div>
 """,
         unsafe_allow_html=True,
@@ -1108,29 +1340,30 @@ if st.session_state.view == "workspace":
     with header_left:
         st.markdown(
             """
-    <div class="workspace-title">
-        Study Workspace
-    </div>
+<div class="workspace-title">
+    Study Workspace
+</div>
 
-    <div class="workspace-sub">
-        Turn long study materials into focused, clear and exam-ready learning content.
-    </div>
-    """,
+<div class="workspace-sub">
+    Turn long study materials into focused, clear and exam-ready learning content.
+</div>
+""",
             unsafe_allow_html=True,
         )
 
     with header_right:
+        status_text = "● AI Ready" if st.session_state.logged_in else "● Guest Preview"
+
         st.markdown(
-            """
-    <div style="text-align:right;margin-top:10px;">
-        <span class="status-badge">
-            ● AI Ready
-        </span>
-    </div>
-    """,
+            f"""
+<div style="text-align:right;margin-top:10px;">
+    <span class="status-badge">
+        {status_text}
+    </span>
+</div>
+""",
             unsafe_allow_html=True,
         )
-
 
     # =========================================================
     # MODE SELECTOR
@@ -1150,9 +1383,8 @@ if st.session_state.view == "workspace":
 
     st.write("")
 
-
     # =========================================================
-    # CHATGPT-STYLE MAIN WORKSPACE
+    # MAIN WORKSPACE
     # =========================================================
 
     space_left, main_area, space_right = st.columns([1.35, 7.3, 1.35])
@@ -1161,18 +1393,30 @@ if st.session_state.view == "workspace":
 
         st.markdown(
             """
-    <div class="card-title">
-        ✍️ What would you like to study?
-    </div>
+<div class="card-title">
+    ✍️ What would you like to study?
+</div>
 
-    <div class="card-subtitle">
-        Paste your lecture notes, article or study material below.
-    </div>
-    """,
+<div class="card-subtitle">
+    Paste your lecture notes, article or study material below.
+</div>
+""",
             unsafe_allow_html=True,
         )
 
-        if st.session_state.loaded_pdf_name:
+        if not st.session_state.logged_in:
+            st.markdown(
+                """
+<div class="guest-lock">
+    🔐 <b>Login required to use NoteX.</b><br>
+    You can explore the workspace, but login or create an account
+    to paste text, upload PDFs and generate AI study content.
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+
+        if st.session_state.logged_in and st.session_state.loaded_pdf_name:
             st.caption(
                 f"📄 Loaded PDF: {st.session_state.loaded_pdf_name}"
             )
@@ -1183,9 +1427,13 @@ if st.session_state.view == "workspace":
             placeholder=(
                 "Paste your study content here...\n\n"
                 "Or upload a PDF from the sidebar."
+                if st.session_state.logged_in
+                else
+                "Login or create an account to enter study content."
             ),
             height=180,
             label_visibility="collapsed",
+            disabled=not st.session_state.logged_in,
         )
 
         count_left, count_right = st.columns(2)
@@ -1196,12 +1444,33 @@ if st.session_state.view == "workspace":
         with count_right:
             st.caption(f"🔤 {len(text)} characters")
 
-        generate = st.button(
-            "✦ Generate with NoteX",
-            use_container_width=True,
-            type="primary",
-        )
+        if st.session_state.logged_in:
+            generate = st.button(
+                "✦ Generate with NoteX",
+                use_container_width=True,
+                type="primary",
+            )
+        else:
+            login_col, register_col = st.columns(2)
 
+            with login_col:
+                st.button(
+                    "🔐 Login to Generate",
+                    use_container_width=True,
+                    type="primary",
+                    key="workspace_login",
+                    on_click=go_to_login,
+                )
+
+            with register_col:
+                st.button(
+                    "📝 Create Account",
+                    use_container_width=True,
+                    key="workspace_register",
+                    on_click=go_to_register,
+                )
+
+            generate = False
 
     # =========================================================
     # GENERATE CONTENT
@@ -1256,22 +1525,27 @@ if st.session_state.view == "workspace":
                 st.session_state.current_note_id = note_id
 
                 st.toast(
-                    "Generated and saved to history!",
+                    "Generated and saved to your history!",
                     icon="✨",
                 )
 
             except Exception as error:
-                st.error(
-                    f"NoteX couldn't generate the result: {error}"
-                )
+                error_text = str(error)
 
+                if "503" in error_text or "UNAVAILABLE" in error_text:
+                    st.warning(
+                        "AI is currently busy. Please try again in a few seconds."
+                    )
+                else:
+                    st.error(
+                        f"NoteX couldn't generate the result: {error}"
+                    )
 
     # =========================================================
     # OUTPUT BELOW INPUT
-    # Nothing is shown before generation.
     # =========================================================
 
-    if st.session_state.output_text:
+    if st.session_state.logged_in and st.session_state.output_text:
 
         space_left, output_area, space_right = st.columns(
             [1.35, 7.3, 1.35]
@@ -1287,14 +1561,14 @@ if st.session_state.view == "workspace":
             with title_col:
                 st.markdown(
                     f"""
-    <div class="card-title">
-        ✨ {st.session_state.mode}
-    </div>
+<div class="card-title">
+    ✨ {st.session_state.mode}
+</div>
 
-    <div class="card-subtitle">
-        Generated by NoteX AI
-    </div>
-    """,
+<div class="card-subtitle">
+    Generated by NoteX AI
+</div>
+""",
                     unsafe_allow_html=True,
                 )
 
@@ -1315,10 +1589,6 @@ if st.session_state.view == "workspace":
                                 st.warning("Could not save this note.")
                         except Exception as error:
                             st.error(f"Save failed: {error}")
-                    else:
-                        st.warning(
-                            "Generate a new note first."
-                        )
 
             with download_col:
                 st.download_button(
@@ -1333,8 +1603,236 @@ if st.session_state.view == "workspace":
                 st.markdown(st.session_state.output_text)
 
 
+elif st.session_state.view == "login":
+    # =========================================================
+    # LOGIN PAGE
+    # =========================================================
 
-elif st.session_state.view == "saved":
+    st.markdown(
+        """
+<div class="auth-shell">
+    <div class="auth-brand">
+        <div class="auth-brand-title">
+            Note<span class="auth-brand-x">X</span>
+        </div>
+        <div class="auth-subtitle">
+            Welcome back. Login to continue your study workspace.
+        </div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    auth_left, auth_center, auth_right = st.columns([2.4, 4.2, 2.4])
+
+    with auth_center:
+        with st.container(border=True):
+
+            st.markdown("### 🔐 Login")
+
+            login_email = st.text_input(
+                "Email",
+                placeholder="you@example.com",
+                key="login_email",
+            )
+
+            login_password = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Enter your password",
+                key="login_password",
+            )
+
+            if st.button(
+                "Login",
+                use_container_width=True,
+                type="primary",
+                key="login_submit",
+            ):
+                if not login_email.strip() or not login_password:
+                    st.warning("Please enter email and password.")
+                else:
+                    try:
+                        success, result = login_user(
+                            login_email,
+                            login_password,
+                        )
+
+                        if success:
+                            user = result
+
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = str(user["_id"])
+                            st.session_state.user_name = user.get("name", "User")
+                            st.session_state.user_email = user.get("email", "")
+                            st.session_state.view = "workspace"
+                            st.session_state.input_text = ""
+                            st.session_state.output_text = ""
+                            st.session_state.current_note_id = None
+                            st.session_state.loaded_pdf_name = ""
+
+                            st.toast(
+                                f"Welcome back, {st.session_state.user_name}!",
+                                icon="👋",
+                            )
+
+                            st.rerun()
+
+                        else:
+                            st.error(result)
+
+                    except Exception as error:
+                        st.error(f"Login failed: {error}")
+
+            st.write("")
+
+            st.caption("Don't have an account?")
+
+            st.button(
+                "📝 Create Account",
+                use_container_width=True,
+                key="login_to_register",
+                on_click=go_to_register,
+            )
+
+            st.button(
+                "← Back to Workspace",
+                use_container_width=True,
+                key="login_back_workspace",
+                on_click=go_to_workspace,
+            )
+
+
+elif st.session_state.view == "register":
+    # =========================================================
+    # REGISTER PAGE
+    # =========================================================
+
+    st.markdown(
+        """
+<div class="auth-shell">
+    <div class="auth-brand">
+        <div class="auth-brand-title">
+            Note<span class="auth-brand-x">X</span>
+        </div>
+        <div class="auth-subtitle">
+            Create your account and keep your notes private.
+        </div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    auth_left, auth_center, auth_right = st.columns([2.4, 4.2, 2.4])
+
+    with auth_center:
+        with st.container(border=True):
+
+            st.markdown("### 📝 Create Account")
+
+            register_name = st.text_input(
+                "Name",
+                placeholder="Your name",
+                key="register_name",
+            )
+
+            register_email = st.text_input(
+                "Email",
+                placeholder="you@example.com",
+                key="register_email",
+            )
+
+            register_password = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Minimum 6 characters",
+                key="register_password",
+            )
+
+            confirm_password = st.text_input(
+                "Confirm Password",
+                type="password",
+                placeholder="Re-enter your password",
+                key="register_confirm_password",
+            )
+
+            if st.button(
+                "Create Account",
+                use_container_width=True,
+                type="primary",
+                key="register_submit",
+            ):
+                if not register_name.strip():
+                    st.warning("Please enter your name.")
+
+                elif not register_email.strip():
+                    st.warning("Please enter your email.")
+
+                elif len(register_password) < 6:
+                    st.warning("Password must be at least 6 characters.")
+
+                elif register_password != confirm_password:
+                    st.warning("Passwords do not match.")
+
+                else:
+                    try:
+                        success, result = register_user(
+                            register_name,
+                            register_email,
+                            register_password,
+                        )
+
+                        if success:
+                            user_id = result
+
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = user_id
+                            st.session_state.user_name = register_name.strip()
+                            st.session_state.user_email = register_email.strip().lower()
+                            st.session_state.view = "workspace"
+                            st.session_state.input_text = ""
+                            st.session_state.output_text = ""
+                            st.session_state.current_note_id = None
+                            st.session_state.loaded_pdf_name = ""
+
+                            st.toast(
+                                "Account created successfully!",
+                                icon="✅",
+                            )
+
+                            st.rerun()
+
+                        else:
+                            st.error(result)
+
+                    except Exception as error:
+                        if "duplicate key" in str(error).lower():
+                            st.error("This email is already registered.")
+                        else:
+                            st.error(f"Registration failed: {error}")
+
+            st.write("")
+
+            st.caption("Already have an account?")
+
+            st.button(
+                "🔐 Login",
+                use_container_width=True,
+                key="register_to_login",
+                on_click=go_to_login,
+            )
+
+            st.button(
+                "← Back to Workspace",
+                use_container_width=True,
+                key="register_back_workspace",
+                on_click=go_to_workspace,
+            )
+
+
+elif st.session_state.view == "saved" and st.session_state.logged_in:
     # =========================================================
     # SAVED NOTES PAGE
     # =========================================================
@@ -1435,7 +1933,7 @@ elif st.session_state.view == "saved":
 
 
 
-elif st.session_state.view == "history":
+elif st.session_state.view == "history" and st.session_state.logged_in:
     # =========================================================
     # FULL HISTORY PAGE
     # =========================================================
